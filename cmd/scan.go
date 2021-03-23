@@ -16,12 +16,9 @@ limitations under the License.
 package main
 
 import (
-	"bufio"
 	"dups"
-	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -47,65 +44,32 @@ You can add '>> file.txt' at the end to export the result into a text file
 		}
 		singleCore, _ := cmd.Flags().GetBool("single-core")
 		minSize, _ := cmd.Flags().GetInt64("min-size")
-		flat, _ := cmd.Flags().GetBool("flat")
 
-		if !flat {
-			fmt.Println("scanning path ...")
-		}
+		log.Println("scanning path ...")
 		files, err := dups.GetFiles(path, minSize)
 		if err != nil {
 			log.Fatal("error while listing files:", err)
 		}
-		if !flat {
-			fmt.Printf("found %d files. calculating hashes using sha256 algorithm with multicore: %t\n", len(files), !singleCore)
-		}
+
+		log.Printf("found %d files. calculating hashes using sha256 algorithm with multicore: %t\n", len(files), !singleCore)
 		groups, totalFiles := dups.GroupFiles(files)
-		hashes := dups.CollectHashes(groups, singleCore, flat, totalFiles)
-		if !flat {
-			fmt.Println("scanning for duplicates ...")
-		}
+		hashes := dups.CollectHashes(groups, singleCore, totalFiles)
+
+		log.Println("scanning for duplicates ...")
 		duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
-		if !flat {
-			totalBytes := int64(0)
-			for _, fs := range duplicates {
-				fmt.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
-				for _, file := range fs[1:] {
-					fmt.Println(file.Path)
-					totalBytes += fs[0].Size
-				}
-				fmt.Println("============================================================================")
+		totalBytes := int64(0)
+		for _, fs := range duplicates {
+			log.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
+			for _, file := range fs[1:] {
+				log.Println(file.Path)
+				totalBytes += fs[0].Size
 			}
-			fmt.Printf("found %d files with total of %d duplicates wasting %d bytes\n", totalFiles, totalDuplicates, totalBytes)
-		} else {
-			for _, fs := range duplicates {
-				for _, file := range fs[1:] {
-					fmt.Println(file.Path)
-				}
-			}
+			log.Println("============================================================================")
 		}
-		if !flat {
-			if len(duplicates) > 0 {
-				scanner := bufio.NewScanner(os.Stdin)
-				fmt.Println("Listing completed.")
-				fmt.Println("Would you like to delete duplicates? (y/n)")
-				scanner.Scan()
-				text := scanner.Text()
-				lowered := strings.ToLower(text)
-				if lowered == "y" || lowered == "yes" {
-					totalSize, totalDeleted, err := dups.RemoveDuplicates(duplicates)
-					if err != nil {
-						log.Fatal("error deleting duplicate files:", err)
-					}
-					fmt.Printf("removed %d files with the total size of %d bytes\n", totalDeleted, totalSize)
-				}
-			}
-		}
+		log.Printf("found %d files with total of %d duplicates wasting %d bytes\n", totalFiles, totalDuplicates, totalBytes)
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(scanCmd)
-	scanCmd.Flags().BoolP("flat", "f", false, "flat output, no extra info (only prints duplicate files")
-	scanCmd.Flags().BoolP("single-core", "s", false, "use single cpu core")
-	scanCmd.Flags().Int64("min-size", 1024, "minimum file size to scan in bytes")
+	addCmd(scanCmd)
 }

@@ -62,7 +62,7 @@ dups scan path/to/directory -s --algorithm xxhash
 package main
 
 import (
-	"fmt"
+	"log"
 	"github.com/Navid2zp/dups"
 )
 
@@ -81,15 +81,15 @@ func main()  {
 	// flatt: don't print the process bar or any other information
 	hashes := dups.CollectHashes(fileGroups, false, dups.XXHash, false, totalFiles)
 	duplicates, filesCount, duplicatesCount := dups.GetDuplicates(hashes)
-	fmt.Println("total number of files with duplicates:", filesCount)
-	fmt.Println("total number of duplicate files:", duplicatesCount)
+	log.Println("total number of files with duplicates:", filesCount)
+	log.Println("total number of duplicate files:", duplicatesCount)
 
 	freedSize, deletedCount, err := dups.RemoveDuplicates(duplicates)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("remove", deletedCount, "files")
-	fmt.Println("freed a total of ", freedSize, "bytes")
+	log.Println("remove", deletedCount, "files")
+	log.Println("freed a total of ", freedSize, "bytes")
 }
 ```
 

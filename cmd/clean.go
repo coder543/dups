@@ -46,54 +46,40 @@ You can add '>> file.txt' at the end to export the result into a text file
 		}
 		singleCore, _ := cmd.Flags().GetBool("single-core") // single core option
 		minSize, _ := cmd.Flags().GetInt64("min-size")      // minimum file size to scan
-		flat, _ := cmd.Flags().GetBool("flat")
-		if !flat {
-			fmt.Println("scanning path ...")
-		}
+
+		log.Println("scanning path ...")
 		files, err := dups.GetFiles(path, minSize)
 		if err != nil {
 			log.Fatal("error while listing files:", err)
 		}
-		if !flat {
-			fmt.Printf("found %d files. calculating hashes using sha256 algorithm with multicore: %t", len(files), !singleCore)
-		}
+
+		log.Printf("found %d files. calculating hashes using sha256 algorithm with multicore: %t", len(files), !singleCore)
 		groups, totalFiles := dups.GroupFiles(files)
-		hashes := dups.CollectHashes(groups, singleCore, flat, totalFiles)
-		if !flat {
-			fmt.Println("scanning for duplicates ...")
-		}
+		hashes := dups.CollectHashes(groups, singleCore, totalFiles)
+
+		log.Println("scanning for duplicates ...")
 		duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
-		if !flat {
-			fmt.Printf("found %d files with total of %d duplicates\n", totalFiles, totalDuplicates)
-			for _, fs := range duplicates {
-				fmt.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
-				for _, file := range fs[1:] {
-					fmt.Println(file.Path)
-				}
-				fmt.Println("============================================================================")
+		log.Printf("found %d files with total of %d duplicates\n", totalFiles, totalDuplicates)
+		for _, fs := range duplicates {
+			log.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
+			for _, file := range fs[1:] {
+				fmt.Println(file.Path)
 			}
-		} else {
-			for _, fs := range duplicates {
-				for _, file := range fs[1:] {
-					fmt.Println(file.Path)
-				}
-			}
+			log.Println("============================================================================")
 		}
+
 		if len(duplicates) > 0 {
 			totalSize, totalDeleted, err := dups.RemoveDuplicates(duplicates)
 			if err != nil {
 				log.Fatal("error deleting duplicate files:", err)
 			}
-			fmt.Printf("removed %d files with the total size of %d bytes.\n", totalDeleted, totalSize)
+			log.Printf("removed %d files with the total size of %d bytes.\n", totalDeleted, totalSize)
 		} else {
-			fmt.Println("no duplicate files found.")
+			log.Println("no duplicate files found.")
 		}
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(cleanCmd)
-	cleanCmd.Flags().BoolP("flat", "f", false, "flat output, no extra info (only prints duplicate files")
-	cleanCmd.Flags().BoolP("single-core", "s", false, "use single cpu core")
-	cleanCmd.Flags().Int64("min-size", 1024, "minimum file size to scan in bytes")
+	addCmd(cleanCmd)
 }

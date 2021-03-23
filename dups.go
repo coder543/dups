@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-
-	"github.com/cheggaaa/pb/v3"
 )
 
 // FileInfo represents a file containing os.FileInfo and file path
@@ -81,7 +79,7 @@ func GroupFiles(files []FileInfo) (map[int64][]FileInfo, int64) {
 // minSize is the minimum file size to scan
 // "flat=true" will tell the function not to print out any data other than the path to duplicate files
 // algorithm is the algorithm to calculate the hash with
-func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, flat bool, fileCount int64) map[string][]FileInfo {
+func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount int64) map[string][]FileInfo {
 	hashes := map[string][]FileInfo{}
 	var lock = sync.Mutex{}
 
@@ -92,12 +90,8 @@ func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, flat bool
 		}
 	}
 
-	// progress bar to show if "flat=false"
-	var bar *pb.ProgressBar
-	if !flat {
-		bar = createBar(totalSize)
-		defer bar.Finish()
-	}
+	bar := createBar(totalSize)
+	defer bar.Finish()
 
 	if singleThread {
 		// All groups will have more than one file
