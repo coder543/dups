@@ -45,7 +45,9 @@ func GetFileHash(path string, bar *pb.ProgressBar) (string, error) {
 		inner: h,
 	}
 
-	if _, err := io.Copy(bw, f); err != nil {
+	limited := io.LimitReader(f, 128*1024)
+
+	if _, err := io.Copy(bw, limited); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
@@ -53,10 +55,9 @@ func GetFileHash(path string, bar *pb.ProgressBar) (string, error) {
 
 // GetFiles finds and returns all the files in the given path
 // It will also returns any file in sub-directories if "full=true"
-func GetFiles(root string, minSize int64) ([]FileInfo, int64, error) {
+func GetFiles(root string, minSize int64) ([]FileInfo, error) {
 	var filesInfos []FileInfo
 	cleanedPath := CleanPath(root)
-	totalSize := int64(0)
 
 	err := filepath.Walk(cleanedPath, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
@@ -73,15 +74,14 @@ func GetFiles(root string, minSize int64) ([]FileInfo, int64, error) {
 			Path: path,
 			Size: size,
 		})
-		totalSize += size
 
 		return nil
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	return filesInfos, totalSize, nil
+	return filesInfos, nil
 }
 
 // GroupFiles groups files based on their file size
@@ -94,7 +94,9 @@ func GroupFiles(files []FileInfo) (map[int64][]FileInfo, int64) {
 		fileCount++
 	}
 	for bucket, files := range groups {
-		if len(files) < 2 {
+		numFiles := len(files)
+		if numFiles < 2 {
+			fileCount -= int64(numFiles)
 			delete(groups, bucket)
 		}
 	}
@@ -107,11 +109,13 @@ func GroupFiles(files []FileInfo) (map[int64][]FileInfo, int64) {
 // minSize is the minimum file size to scan
 // "flat=true" will tell the function not to print out any data other than the path to duplicate files
 // algorithm is the algorithm to calculate the hash with
-func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount, totalSize int64) map[string][]FileInfo {
+func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount int64) map[string][]FileInfo {
 	hashes := map[string][]FileInfo{}
 	var lock = sync.Mutex{}
 
-	bar := createBar(totalSize)
+	// TODO: create second bar when initial duplicates are found,
+	// then do full file hashes to compare those duplicates
+	bar := createBar(128 * 1024 * fileCount)
 	defer bar.Finish()
 
 	if singleThread {

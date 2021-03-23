@@ -46,25 +46,27 @@ You can add '>> file.txt' at the end to export the result into a text file
 		minSize, _ := cmd.Flags().GetInt64("min-size")
 
 		log.Println("scanning path ...")
-		files, totalSize, err := dups.GetFiles(path, minSize)
+		files, err := dups.GetFiles(path, minSize)
 		if err != nil {
 			log.Fatal("error while listing files:", err)
 		}
 
 		log.Printf("found %d files. calculating hashes using sha256 algorithm with multicore: %t\n", len(files), !singleCore)
 		groups, totalFiles := dups.GroupFiles(files)
-		hashes := dups.CollectHashes(groups, singleCore, totalFiles, totalSize)
+		hashes := dups.CollectHashes(groups, singleCore, totalFiles)
 
 		log.Println("scanning for duplicates ...")
 		duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
+		totalBytes := int64(0)
 		for _, fs := range duplicates {
 			log.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
 			for _, file := range fs[1:] {
 				log.Println(file.Path)
+				totalBytes += fs[0].Size
 			}
 			log.Println("============================================================================")
 		}
-		log.Printf("found %d files with total of %d duplicates wasting %d bytes\n", totalFiles, totalDuplicates, totalSize)
+		log.Printf("found %d files with total of %d duplicates wasting %d bytes\n", totalFiles, totalDuplicates, totalBytes)
 	},
 }
 
