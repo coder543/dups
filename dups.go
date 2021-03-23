@@ -91,21 +91,18 @@ func GetFiles(root string, minSize int64) ([]FileInfo, error) {
 
 // GroupFiles groups files based on their file size
 // This will help avoid unnecessary hash calculations since files with different file sizes can't be duplicates
-func GroupFiles(files []FileInfo) (map[int64][]FileInfo, int64) {
+func GroupFiles(files []FileInfo) map[int64][]FileInfo {
 	groups := make(map[int64][]FileInfo)
-	fileCount := int64(0)
 	for _, file := range files {
 		groups[file.Size] = append(groups[file.Size], file)
-		fileCount++
 	}
 	for bucket, files := range groups {
 		numFiles := len(files)
 		if numFiles < 2 {
-			fileCount -= int64(numFiles)
 			delete(groups, bucket)
 		}
 	}
-	return groups, fileCount
+	return groups
 }
 
 // CollectHashes returns hashes for the given group files if there is more than one file with the same size
@@ -114,7 +111,7 @@ func GroupFiles(files []FileInfo) (map[int64][]FileInfo, int64) {
 // minSize is the minimum file size to scan
 // "flat=true" will tell the function not to print out any data other than the path to duplicate files
 // algorithm is the algorithm to calculate the hash with
-func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string][]FileInfo {
+func CollectHashes(fileGroups map[int64][]FileInfo) map[string][]FileInfo {
 	hashes := map[string][]FileInfo{}
 	fullHashes := map[string][]FileInfo{}
 	var lock = sync.Mutex{}

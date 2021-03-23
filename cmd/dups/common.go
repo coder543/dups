@@ -34,8 +34,8 @@ func commonSetup(args []string, minSize int64) ([][]dups.FileInfo, int64, int64)
 	}
 	log.Printf("found %d interesting files\n", len(files))
 
-	groups, totalFiles := dups.GroupFiles(files)
-	hashes := dups.CollectHashes(groups, totalFiles)
+	groups := dups.GroupFiles(files)
+	hashes := dups.CollectHashes(groups)
 	log.Println("scanning for duplicates ...")
 	duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
 	log.Printf("found %d files with total of %d duplicates\n", totalFiles, totalDuplicates)
