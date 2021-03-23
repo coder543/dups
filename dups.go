@@ -132,8 +132,6 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			for file := range workChan {
-				file := file
-
 				// small file optimization, no need to hash the same file twice if the entire file
 				// fits within the quickHash limit
 				fullHash := file.Size < quickHash
@@ -169,7 +167,6 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 	for _, group := range fileGroups {
 		// All groups will have more than one file
 		for _, file := range group {
-			file := file
 			workChan <- file
 		}
 	}
@@ -196,7 +193,6 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			for file := range workChan {
-				file := file
 				hash, err := GetFileHash(file.Path, true, fullBar)
 				if err != nil {
 					log.Printf("Encountered error hashing file %q: %s", file.Path, err)
@@ -213,7 +209,6 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 	}
 
 	for _, file := range moreWork {
-		file := file
 		workChan <- file
 	}
 
