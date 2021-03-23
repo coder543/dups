@@ -4,7 +4,7 @@
 
 
 # dups
-dups is a CLI tool to find and remove duplicate files using different hash algorithms (MD5, SHA256 and XXHash) with multi-core support.
+dups is a CLI tool to find and either remove or hard link duplicate files.
 
 ### Install
 Download binaries:
