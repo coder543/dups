@@ -61,7 +61,7 @@ func GetFileHash(path string, fullHash bool, bar *pb.ProgressBar) (string, error
 // GetFiles finds and returns all the files in the given path
 // It will also returns any file in sub-directories if "full=true"
 func GetFiles(root string, minSize int64) ([]FileInfo, error) {
-	var filesInfos []FileInfo
+	var fileInfos []FileInfo
 	cleanedPath := CleanPath(root)
 
 	err := filepath.Walk(cleanedPath, func(path string, info os.FileInfo, err error) error {
@@ -75,7 +75,7 @@ func GetFiles(root string, minSize int64) ([]FileInfo, error) {
 			return nil
 		}
 
-		filesInfos = append(filesInfos, FileInfo{
+		fileInfos = append(fileInfos, FileInfo{
 			Path: path,
 			Size: size,
 		})
@@ -86,7 +86,7 @@ func GetFiles(root string, minSize int64) ([]FileInfo, error) {
 		return nil, err
 	}
 
-	return filesInfos, nil
+	return fileInfos, nil
 }
 
 // GroupFiles groups files based on their file size
