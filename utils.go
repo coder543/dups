@@ -14,13 +14,13 @@ func CleanPath(path string) string {
 
 // createBar creates a new progress bar with a custom template
 func createBar(limit int64, fullHash bool) *pb.ProgressBar {
-	prefix := "initial pass"
+	prefix := "Initial Pass"
 	if fullHash {
-		prefix = "verification"
+		prefix = "Verification"
 	}
 
 	tmpl := fmt.Sprintf(
-		`%s {{ blue "Progress:" }} {{ bar . "[" "=" (cycle . ">") "." "]"}} {{speed . | green }} {{ rtime . | green }} {{percent . | green}}`,
+		`{{ blue "%s:" }} {{ bar . "[" "=" (cycle . ">") "." "]"}} {{speed . | green }} {{ rtime . | blue }} {{percent . | green}}`,
 		prefix,
 	)
 
