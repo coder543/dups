@@ -183,8 +183,12 @@ func CollectHashes(fileGroups map[int64][]FileInfo) map[string][]FileInfo {
 	wg.Wait()
 	bar.Finish()
 
-	if len(moreWork) == 0 {
-		return map[string][]FileInfo{}
+	// clear out small files that weren't actually similar to anything else
+	for hash, group := range fullHashes {
+		if len(group) < 2 {
+			smallFiles -= int64(len(group))
+			delete(fullHashes, hash)
+		}
 	}
 
 	log.Printf(
@@ -192,6 +196,10 @@ func CollectHashes(fileGroups map[int64][]FileInfo) map[string][]FileInfo {
 		int64(len(moreWork))+smallFiles,
 		smallFiles,
 	)
+
+	if len(moreWork) == 0 {
+		return fullHashes
+	}
 
 	totalSize := int64(0)
 	for _, file := range moreWork {
