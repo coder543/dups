@@ -17,9 +17,7 @@ package main
 
 import (
 	"dups"
-	"fmt"
 	"log"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -32,43 +30,15 @@ var linkCmd = &cobra.Command{
 You can add '>> file.txt' at the end to export the result into a text file
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			log.Fatal("please provide a path: dups find path/to/directory")
-			return
-		}
-		path := dups.CleanPath(args[0])
-		f, err := os.Stat(path)
-		if err != nil {
-			log.Fatal("can't find path:", err)
-		}
-		if !f.IsDir() {
-			log.Fatal("please provide a directory path not a file path")
-		}
 		minSize, _ := cmd.Flags().GetInt64("min-size") // minimum file size to scan
-		log.Println("scanning path ...")
-		files, err := dups.GetFiles(path, minSize)
-		if err != nil {
-			log.Fatal("error while listing files:", err)
-		}
-		log.Printf("found %d interesting files. calculating hashes using sha256 algorithm\n", len(files))
-		groups, totalFiles := dups.GroupFiles(files)
-		hashes := dups.CollectHashes(groups, totalFiles)
-		log.Println("scanning for duplicates ...")
-		duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
-		log.Printf("found %d files with total of %d duplicates\n", totalFiles, totalDuplicates)
-		for _, fs := range duplicates {
-			log.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
-			for _, file := range fs[1:] {
-				fmt.Println(file.Path)
-			}
-			log.Println("============================================================================")
-		}
+		duplicates, _, _ := commonSetup(args, minSize)
+
 		if len(duplicates) > 0 {
-			totalSize, totalDeleted, err := dups.LinkDuplicates(duplicates)
+			totalSize, totalLinked, err := dups.LinkDuplicates(duplicates)
 			if err != nil {
 				log.Fatal("error linking duplicate files:", err)
 			}
-			log.Printf("converted %d files into hard links, regaining %d bytes of storage.\n", totalDeleted, totalSize)
+			log.Printf("converted %d files into hard links, regaining %d bytes of storage.\n", totalLinked, totalSize)
 		} else {
 			log.Println("no duplicate files found.")
 		}
