@@ -44,8 +44,7 @@ You can add '>> file.txt' at the end to export the result into a text file
 		if !f.IsDir() {
 			log.Fatal("please provide a directory path not a file path")
 		}
-		singleCore, _ := cmd.Flags().GetBool("single-core") // single core option
-		minSize, _ := cmd.Flags().GetInt64("min-size")      // minimum file size to scan
+		minSize, _ := cmd.Flags().GetInt64("min-size") // minimum file size to scan
 
 		log.Println("scanning path ...")
 		files, err := dups.GetFiles(path, minSize)
@@ -53,9 +52,9 @@ You can add '>> file.txt' at the end to export the result into a text file
 			log.Fatal("error while listing files:", err)
 		}
 
-		log.Printf("found %d files. calculating hashes using sha256 algorithm with multicore: %t", len(files), !singleCore)
+		log.Printf("found %d files. calculating hashes using sha256 algorithm\n", len(files))
 		groups, totalFiles := dups.GroupFiles(files)
-		hashes := dups.CollectHashes(groups, singleCore, totalFiles)
+		hashes := dups.CollectHashes(groups, totalFiles)
 
 		log.Println("scanning for duplicates ...")
 		duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)

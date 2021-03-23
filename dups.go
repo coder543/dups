@@ -30,8 +30,10 @@ func (w *barWriter) Write(p []byte) (n int, err error) {
 	return n, err
 }
 
+const quickHash = 128 * 1024
+
 // GetFileHash returns sha256 hash of a file
-func GetFileHash(path string, bar *pb.ProgressBar) (string, error) {
+func GetFileHash(path string, fullHash bool, bar *pb.ProgressBar) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -45,9 +47,12 @@ func GetFileHash(path string, bar *pb.ProgressBar) (string, error) {
 		inner: h,
 	}
 
-	limited := io.LimitReader(f, 128*1024)
+	var reader io.Reader = f
+	if !fullHash {
+		reader = io.LimitReader(f, quickHash)
+	}
 
-	if _, err := io.Copy(bw, limited); err != nil {
+	if _, err := io.Copy(bw, reader); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
@@ -109,47 +114,50 @@ func GroupFiles(files []FileInfo) (map[int64][]FileInfo, int64) {
 // minSize is the minimum file size to scan
 // "flat=true" will tell the function not to print out any data other than the path to duplicate files
 // algorithm is the algorithm to calculate the hash with
-func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount int64) map[string][]FileInfo {
+func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string][]FileInfo {
 	hashes := map[string][]FileInfo{}
+	fullHashes := map[string][]FileInfo{}
 	var lock = sync.Mutex{}
 
-	// TODO: create second bar when initial duplicates are found,
-	// then do full file hashes to compare those duplicates
-	bar := createBar(128 * 1024 * fileCount)
-	defer bar.Finish()
-
-	if singleThread {
-		// All groups will have more than one file
-		for _, group := range fileGroups {
-			for _, file := range group {
-				hash, err := GetFileHash(file.Path, bar)
-				if err != nil {
-					log.Printf("Encountered error hashing file %q: %s", file.Path, err)
-				} else {
-					hashes[hash] = append(hashes[hash], file)
-				}
-			}
-		}
-
-		return hashes
-	}
+	bar := createBar(quickHash*fileCount, false)
 
 	numWorkers := runtime.GOMAXPROCS(0)
 	wg := &sync.WaitGroup{}
 	wg.Add(numWorkers)
 
+	moreWork := []FileInfo{}
+
 	workChan := make(chan FileInfo, numWorkers)
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			for file := range workChan {
-				hash, err := GetFileHash(file.Path, bar)
+				file := file
+
+				// small file optimization, no need to hash the same file twice if the entire file
+				// fits within the quickHash limit
+				fullHash := file.Size < quickHash
+				hash, err := GetFileHash(file.Path, fullHash, bar)
 				if err != nil {
 					log.Printf("Encountered error hashing file %q: %s", file.Path, err)
-				} else {
-					lock.Lock()
-					hashes[hash] = append(hashes[hash], file)
-					lock.Unlock()
+					continue
 				}
+
+				lock.Lock()
+				if fullHash {
+					fullHashes[hash] = append(fullHashes[hash], file)
+					lock.Unlock()
+					continue
+				}
+
+				hashes[hash] = append(hashes[hash], file)
+				hashGroupLen := len(hashes[hash])
+				if hashGroupLen == 2 {
+					moreWork = append(moreWork, hashes[hash][0])
+				}
+				if hashGroupLen > 1 {
+					moreWork = append(moreWork, file)
+				}
+				lock.Unlock()
 			}
 
 			wg.Done()
@@ -166,8 +174,52 @@ func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount
 
 	close(workChan)
 	wg.Wait()
+	bar.Finish()
 
-	return hashes
+	if len(moreWork) == 0 {
+		return map[string][]FileInfo{}
+	}
+
+	log.Printf("found %d similar files", len(moreWork))
+
+	totalSize := int64(0)
+	for _, file := range moreWork {
+		totalSize += file.Size
+	}
+
+	fullBar := createBar(totalSize, true)
+
+	wg.Add(numWorkers)
+	workChan = make(chan FileInfo, numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for file := range workChan {
+				file := file
+				hash, err := GetFileHash(file.Path, true, fullBar)
+				if err != nil {
+					log.Printf("Encountered error hashing file %q: %s", file.Path, err)
+					continue
+				}
+
+				lock.Lock()
+				fullHashes[hash] = append(fullHashes[hash], file)
+				lock.Unlock()
+			}
+
+			wg.Done()
+		}()
+	}
+
+	for _, file := range moreWork {
+		file := file
+		workChan <- file
+	}
+
+	close(workChan)
+	wg.Wait()
+	fullBar.Finish()
+
+	return fullHashes
 }
 
 // GetDuplicates scans the given map of hashes and finds the one with duplicates
