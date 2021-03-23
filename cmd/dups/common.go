@@ -32,10 +32,18 @@ func commonSetup(args []string, minSize int64) ([][]dups.FileInfo, int64, int64)
 	if err != nil {
 		log.Fatal("error while listing files:", err)
 	}
-	log.Printf("found %d interesting files\n", len(files))
+	log.Printf("found %d files of min-size or larger\n", len(files))
 
 	groups := dups.GroupFiles(files)
+
+	totalFiles := int64(0)
+	for _, group := range groups {
+		totalFiles += int64(len(group))
+	}
+	log.Printf("found %d files for which there are one or more other files of the same size\n", totalFiles)
+
 	hashes := dups.CollectHashes(groups)
+
 	log.Println("scanning for duplicates ...")
 	duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
 	log.Printf("found %d files with total of %d duplicates\n", totalFiles, totalDuplicates)
