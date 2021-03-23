@@ -187,7 +187,11 @@ func CollectHashes(fileGroups map[int64][]FileInfo) map[string][]FileInfo {
 		return map[string][]FileInfo{}
 	}
 
-	log.Printf("found %d similar files", int64(len(moreWork))+smallFiles)
+	log.Printf(
+		"found %d similar files, of which %d were small enough to be fully scanned already",
+		int64(len(moreWork))+smallFiles,
+		smallFiles,
+	)
 
 	totalSize := int64(0)
 	for _, file := range moreWork {
