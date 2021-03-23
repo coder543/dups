@@ -126,6 +126,7 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 	wg.Add(numWorkers)
 
 	moreWork := []FileInfo{}
+	smallFiles := int64(0)
 
 	workChan := make(chan FileInfo, numWorkers)
 	for i := 0; i < numWorkers; i++ {
@@ -145,6 +146,7 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 				lock.Lock()
 				if fullHash {
 					fullHashes[hash] = append(fullHashes[hash], file)
+					smallFiles++
 					lock.Unlock()
 					continue
 				}
@@ -180,7 +182,7 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 		return map[string][]FileInfo{}
 	}
 
-	log.Printf("found %d similar files", len(moreWork))
+	log.Printf("found %d similar files", int64(len(moreWork))+smallFiles)
 
 	totalSize := int64(0)
 	for _, file := range moreWork {
