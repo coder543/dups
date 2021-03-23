@@ -18,9 +18,10 @@ package main
 import (
 	"dups"
 	"fmt"
-	"github.com/spf13/cobra"
 	"log"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 // clean command
@@ -44,44 +45,37 @@ You can add '>> file.txt' at the end to export the result into a text file
 			log.Fatal("please provide a directory path not a file path")
 		}
 		singleCore, _ := cmd.Flags().GetBool("single-core") // single core option
-		fullSearch, _ := cmd.Flags().GetBool("full") // full search option
-		minSize, _ := cmd.Flags().GetInt("min-size") // minimum file size to scan
+		minSize, _ := cmd.Flags().GetInt64("min-size")      // minimum file size to scan
 		flat, _ := cmd.Flags().GetBool("flat")
-		algorithm, err := cmd.Flags().GetString("algorithm")
-		algorithm = dups.GetAlgorithm(algorithm)
 		if !flat {
 			fmt.Println("scanning path ...")
 		}
-		files, err := dups.GetFiles(path, fullSearch)
+		files, err := dups.GetFiles(path, minSize)
 		if err != nil {
 			log.Fatal("error while listing files:", err)
 		}
 		if !flat {
-			fmt.Println(fmt.Sprintf("found %d files. calculating hashes using %s algorithm with multicore: %t", len(files), algorithm, !singleCore))
+			fmt.Printf("found %d files. calculating hashes using sha256 algorithm with multicore: %t", len(files), !singleCore)
 		}
-		groups, totalFiles := dups.GroupFiles(files, minSize)
-		hashes := dups.CollectHashes(groups, singleCore, algorithm, flat, totalFiles)
+		groups, totalFiles := dups.GroupFiles(files)
+		hashes := dups.CollectHashes(groups, singleCore, flat, totalFiles)
 		if !flat {
 			fmt.Println("scanning for duplicates ...")
 		}
 		duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
 		if !flat {
-			fmt.Println(fmt.Sprintf("found %d files with total of %d duplicates", totalFiles, totalDuplicates))
+			fmt.Printf("found %d files with total of %d duplicates\n", totalFiles, totalDuplicates)
 			for _, fs := range duplicates {
-				fmt.Println(fmt.Sprintf("Path: %s \nSize: %d", fs[0].Path, fs[0].Info.Size()))
-				for i, file := range fs {
-					if i != 0 {
-						fmt.Println(file.Path)
-					}
+				fmt.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
+				for _, file := range fs[1:] {
+					fmt.Println(file.Path)
 				}
 				fmt.Println("============================================================================")
 			}
 		} else {
 			for _, fs := range duplicates {
-				for i, file := range fs {
-					if i != 0 {
-						fmt.Println(file.Path)
-					}
+				for _, file := range fs[1:] {
+					fmt.Println(file.Path)
 				}
 			}
 		}
@@ -90,7 +84,7 @@ You can add '>> file.txt' at the end to export the result into a text file
 			if err != nil {
 				log.Fatal("error deleting duplicate files:", err)
 			}
-			fmt.Println(fmt.Sprintf("removed %d files with the total size of %d bytes.", totalDeleted, totalSize))
+			fmt.Printf("removed %d files with the total size of %d bytes.\n", totalDeleted, totalSize)
 		} else {
 			fmt.Println("no duplicate files found.")
 		}
@@ -100,8 +94,6 @@ You can add '>> file.txt' at the end to export the result into a text file
 func init() {
 	rootCmd.AddCommand(cleanCmd)
 	cleanCmd.Flags().BoolP("flat", "f", false, "flat output, no extra info (only prints duplicate files")
-	cleanCmd.Flags().BoolP("full", "r", true, "full search (search in sub-directories too)")
 	cleanCmd.Flags().BoolP("single-core", "s", false, "use single cpu core")
-	cleanCmd.Flags().Int("min-size", 10, "minimum file size to scan in bytes")
-	cleanCmd.Flags().String("algorithm", "md5", "algorithm to use (md5/sha256/xxhash)")
+	cleanCmd.Flags().Int64("min-size", 1024, "minimum file size to scan in bytes")
 }

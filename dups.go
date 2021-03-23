@@ -1,65 +1,26 @@
 package dups
 
 import (
-	"crypto/md5"
 	"crypto/sha256"
 	"fmt"
-	"github.com/cespare/xxhash"
-	"github.com/cheggaaa/pb/v3"
 	"io"
-	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
-)
 
-const (
-	// XXHash represents XXHash algorithm
-	XXHash = "xxhash"
-	// MD5 represents XXHash algorithm
-	MD5    = "md5"
-	// SHA256 represents XXHash algorithm
-	SHA256 = "sha256"
+	"github.com/cheggaaa/pb/v3"
 )
 
 // FileInfo represents a file containing os.FileInfo and file path
 type FileInfo struct {
 	Path string
-	Info os.FileInfo
+	Size int64
 }
 
-// getXXHash return xxhash of a file
-func getXXHash(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-
-	defer f.Close()
-	h := xxhash.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", h.Sum64()), nil
-}
-
-// getMD5 returns md5 hash of a file
-func getMD5(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-
-	defer f.Close()
-	h := md5.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
-// getSHA256 returns sha256 hash of a file
-func getSHA256(path string) (string, error) {
+// GetFileHash returns sha256 hash of a file
+func GetFileHash(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -73,67 +34,42 @@ func getSHA256(path string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// GetFileHash returns given file hash using the provided algorithm
-// Default: md5
-func GetFileHash(path, algorithm string) (string, error) {
-	switch algorithm {
-	case MD5:
-		return getMD5(path)
-	case XXHash:
-		return getXXHash(path)
-	case SHA256:
-		return getSHA256(path)
-	default:
-		return getMD5(path)
-	}
-}
-
 // GetFiles finds and returns all the files in the given path
 // It will also returns any file in sub-directories if "full=true"
-func GetFiles(root string, full bool) ([]FileInfo, error) {
+func GetFiles(root string, minSize int64) ([]FileInfo, error) {
 	var filesInfos []FileInfo
 	cleanedPath := CleanPath(root)
-	if !full {
-		files, err := ioutil.ReadDir(cleanedPath)
-		if err != nil {
-			return filesInfos, err
-		}
-		for _, file := range files {
-			if !file.IsDir() {
-				filesInfos = append(filesInfos, FileInfo{
-					Path: filepath.Join(cleanedPath, file.Name()),
-					Info: file,
-				})
-			}
-		}
-	} else {
-		err := filepath.Walk(cleanedPath, func(path string, info os.FileInfo, err error) error {
-			if !info.IsDir() {
+	err := filepath.Walk(cleanedPath, func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() {
+			size := info.Size()
+			// Ignore files less than minimum size
+			if size > minSize {
 				filesInfos = append(filesInfos, FileInfo{
 					Path: path,
-					Info: info,
+					Size: size,
 				})
 			}
-			return nil
-		})
-		if err != nil {
-			return filesInfos, err
 		}
+		return nil
+	})
+	if err != nil {
+		return filesInfos, err
 	}
 	return filesInfos, nil
 }
 
 // GroupFiles groups files based on their file size
 // This will help avoid unnecessary hash calculations since files with different file sizes can't be duplicates
-func GroupFiles(files []FileInfo, minSize int) (map[int][]FileInfo, int) {
-	groups := make(map[int][]FileInfo)
-	fileCount := 0
+func GroupFiles(files []FileInfo) (map[int64][]FileInfo, int64) {
+	groups := make(map[int64][]FileInfo)
+	fileCount := int64(0)
 	for _, file := range files {
-		size := int(file.Info.Size())
-		// Ignore files less than minimum size
-		if size > minSize {
-			groups[size] = append(groups[size], file)
-			fileCount++
+		groups[file.Size] = append(groups[file.Size], file)
+		fileCount++
+	}
+	for bucket, files := range groups {
+		if len(files) < 2 {
+			delete(groups, bucket)
 		}
 	}
 	return groups, fileCount
@@ -145,99 +81,91 @@ func GroupFiles(files []FileInfo, minSize int) (map[int][]FileInfo, int) {
 // minSize is the minimum file size to scan
 // "flat=true" will tell the function not to print out any data other than the path to duplicate files
 // algorithm is the algorithm to calculate the hash with
-func CollectHashes(fileGroups map[int][]FileInfo, singleThread bool, algorithm string, flat bool, fileCount int) map[string][]FileInfo {
+func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, flat bool, fileCount int64) map[string][]FileInfo {
 	hashes := map[string][]FileInfo{}
+	var lock = sync.Mutex{}
 
-	// You cant't read/write at the same time to a map
-	// readHash and writeHash will read/write the given key/value to/from the map
-	// they make sure that the map is locked while a read or write is happening
-	var lock = sync.RWMutex{}
-	var readHash = func(key string) []FileInfo {
-		lock.RLock()
-		defer lock.RUnlock()
-		return hashes[key]
-	}
-
-	var writeHash = func(hash string, files []FileInfo) {
-		lock.Lock()
-		defer lock.Unlock()
-		hashes[hash] = files
+	totalSize := int64(0)
+	for _, group := range fileGroups {
+		for _, file := range group {
+			totalSize += file.Size
+		}
 	}
 
 	// progress bar to show if "flat=false"
 	var bar *pb.ProgressBar
 	if !flat {
-		bar = createBar(fileCount)
+		bar = createBar(totalSize)
+		defer bar.Finish()
 	}
 
 	if singleThread {
+		// All groups will have more than one file
 		for _, group := range fileGroups {
-			// Ignore groups with one file
-			if len(group) > 1 {
-				for _, file := range group {
-					hash, err := GetFileHash(file.Path, algorithm)
-					if err == nil {
-						hashes[hash] = append(hashes[hash], file)
-					}
-					if bar != nil {
-						bar.Increment()
-					}
+			for _, file := range group {
+				hash, err := GetFileHash(file.Path)
+				if err != nil {
+					log.Printf("Encountered error hashing file %q: %s", file.Path, err)
+				} else {
+					hashes[hash] = append(hashes[hash], file)
 				}
-			} else {
 				if bar != nil {
-					bar.Increment()
+					bar.Add64(file.Size)
 				}
 			}
 		}
-		if bar != nil {
-			bar.Finish()
-		}
-	} else {
-		var wg sync.WaitGroup
-		wg.Add(fileCount)
-		for _, group := range fileGroups {
-			// Ignore groups with one file
-			if len(group) > 1 {
-				for _, file := range group {
-					go func(f FileInfo, bar *pb.ProgressBar) {
-						hash, err := GetFileHash(f.Path, algorithm)
-						if err == nil {
-							oldHashes := readHash(hash)
-							newHashes := append(oldHashes, f)
-							writeHash(hash, newHashes)
-						}
-						if bar != nil {
-							// tell the progress bar that a process is finished
-							bar.Increment()
-						}
-						wg.Done()
-					}(file, bar)
+
+		return hashes
+	}
+
+	numWorkers := runtime.GOMAXPROCS(0)
+	wg := &sync.WaitGroup{}
+	wg.Add(numWorkers)
+
+	workChan := make(chan FileInfo, numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for file := range workChan {
+				hash, err := GetFileHash(file.Path)
+				if err != nil {
+					log.Printf("Encountered error hashing file %q: %s", file.Path, err)
+				} else {
+					lock.Lock()
+					hashes[hash] = append(hashes[hash], file)
+					lock.Unlock()
 				}
-			} else {
-				wg.Done()
 				if bar != nil {
-					bar.Increment()
+					bar.Add64(file.Size)
 				}
 			}
-		}
-		wg.Wait()
-		if bar != nil {
-			// tell the progress bar that all the processes are finished
-			bar.Finish()
+
+			wg.Done()
+		}()
+	}
+
+	for _, group := range fileGroups {
+		// All groups will have more than one file
+		for _, file := range group {
+			file := file
+			workChan <- file
 		}
 	}
+
+	close(workChan)
+	wg.Wait()
+
 	return hashes
 }
 
 // GetDuplicates scans the given map of hashes and finds the one with duplicates
 // It will return a slice containing slices with each slice containing paths to duplicate files
 // It will also returns the total of duplicate files and the total of files that have duplicates
-func GetDuplicates(hashes map[string][]FileInfo) ([][]FileInfo, int, int) {
+func GetDuplicates(hashes map[string][]FileInfo) ([][]FileInfo, int64, int64) {
 	var duplicateFiles [][]FileInfo
 	// total duplicate files
-	total := 0
+	total := int64(0)
 	// Total number of files with duplicates
-	totalFiles := 0
+	totalFiles := int64(0)
 	for _, files := range hashes {
 		if len(files) > 1 {
 			totalFiles++
@@ -257,13 +185,13 @@ func GetDuplicates(hashes map[string][]FileInfo) ([][]FileInfo, int, int) {
 // RemoveDuplicates removes duplicates
 // It will keep the first file in a duplicate set and removes any other files in the set
 // It will return the sum of deleted file sizes and total number of deleted files
-func RemoveDuplicates(fileSets [][]FileInfo) (int, int, error) {
-	totalSize := 0
-	totalDeleted := 0
+func RemoveDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
+	totalSize := int64(0)
+	totalDeleted := int64(0)
 	for _, files := range fileSets {
 		for i, file := range files {
 			if i > 0 {
-				totalSize += int(file.Info.Size())
+				totalSize += file.Size
 				totalDeleted++
 				err := os.Remove(file.Path)
 				if err != nil {
@@ -274,4 +202,30 @@ func RemoveDuplicates(fileSets [][]FileInfo) (int, int, error) {
 		}
 	}
 	return totalSize, totalDeleted, nil
+}
+
+// LinkDuplicates links duplicates
+// It will keep the first file in a duplicate set and make hard links from any other files in the set to that file.
+// It will return the sum of linked file sizes and total number of linked files.
+func LinkDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
+	totalSize := int64(0)
+	totalLinked := int64(0)
+	for _, files := range fileSets {
+		linkPath := files[0].Path
+		for _, file := range files[1:] {
+			totalSize += file.Size
+			totalLinked++
+
+			err := os.Remove(file.Path)
+			if err != nil {
+				return totalSize, totalLinked, err
+			}
+
+			err = os.Link(linkPath, file.Path)
+			if err != nil {
+				return totalSize, totalLinked, err
+			}
+		}
+	}
+	return totalSize, totalLinked, nil
 }

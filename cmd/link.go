@@ -16,20 +16,19 @@ limitations under the License.
 package main
 
 import (
-	"bufio"
 	"dups"
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-var scanCmd = &cobra.Command{
-	Use:   "scan",
-	Short: "Finds duplicate files in a given path but doesn't delete them.",
-	Long: `Finds duplicate files in a given path but doesn't delete them.
+// link command
+var linkCmd = &cobra.Command{
+	Use:   "link",
+	Short: "Finds duplicate files in a given path and deletes them.",
+	Long: `Finds duplicate files in a given path and deletes them.
 You can add '>> file.txt' at the end to export the result into a text file
 `,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -45,10 +44,9 @@ You can add '>> file.txt' at the end to export the result into a text file
 		if !f.IsDir() {
 			log.Fatal("please provide a directory path not a file path")
 		}
-		singleCore, _ := cmd.Flags().GetBool("single-core")
-		minSize, _ := cmd.Flags().GetInt64("min-size")
+		singleCore, _ := cmd.Flags().GetBool("single-core") // single core option
+		minSize, _ := cmd.Flags().GetInt64("min-size")      // minimum file size to scan
 		flat, _ := cmd.Flags().GetBool("flat")
-
 		if !flat {
 			fmt.Println("scanning path ...")
 		}
@@ -66,16 +64,14 @@ You can add '>> file.txt' at the end to export the result into a text file
 		}
 		duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
 		if !flat {
-			totalBytes := int64(0)
+			fmt.Printf("found %d files with total of %d duplicates\n", totalFiles, totalDuplicates)
 			for _, fs := range duplicates {
 				fmt.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
 				for _, file := range fs[1:] {
 					fmt.Println(file.Path)
-					totalBytes += fs[0].Size
 				}
 				fmt.Println("============================================================================")
 			}
-			fmt.Printf("found %d files with total of %d duplicates wasting %d bytes\n", totalFiles, totalDuplicates, totalBytes)
 		} else {
 			for _, fs := range duplicates {
 				for _, file := range fs[1:] {
@@ -83,29 +79,21 @@ You can add '>> file.txt' at the end to export the result into a text file
 				}
 			}
 		}
-		if !flat {
-			if len(duplicates) > 0 {
-				scanner := bufio.NewScanner(os.Stdin)
-				fmt.Println("Listing completed.")
-				fmt.Println("Would you like to delete duplicates? (y/n)")
-				scanner.Scan()
-				text := scanner.Text()
-				lowered := strings.ToLower(text)
-				if lowered == "y" || lowered == "yes" {
-					totalSize, totalDeleted, err := dups.RemoveDuplicates(duplicates)
-					if err != nil {
-						log.Fatal("error deleting duplicate files:", err)
-					}
-					fmt.Printf("removed %d files with the total size of %d bytes\n", totalDeleted, totalSize)
-				}
+		if len(duplicates) > 0 {
+			totalSize, totalDeleted, err := dups.LinkDuplicates(duplicates)
+			if err != nil {
+				log.Fatal("error linking duplicate files:", err)
 			}
+			fmt.Printf("converted %d files into hard links, regaining %d bytes of storage.\n", totalDeleted, totalSize)
+		} else {
+			fmt.Println("no duplicate files found.")
 		}
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(scanCmd)
-	scanCmd.Flags().BoolP("flat", "f", false, "flat output, no extra info (only prints duplicate files")
-	scanCmd.Flags().BoolP("single-core", "s", false, "use single cpu core")
-	scanCmd.Flags().Int64("min-size", 1024, "minimum file size to scan in bytes")
+	rootCmd.AddCommand(linkCmd)
+	linkCmd.Flags().BoolP("flat", "f", false, "flat output, no extra info (only prints duplicate files")
+	linkCmd.Flags().BoolP("single-core", "s", false, "use single cpu core")
+	linkCmd.Flags().Int64("min-size", 1024, "minimum file size to scan in bytes")
 }
