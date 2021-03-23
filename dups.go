@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+
+	"github.com/cheggaaa/pb/v3"
 )
 
 // FileInfo represents a file containing os.FileInfo and file path
@@ -17,8 +19,19 @@ type FileInfo struct {
 	Size int64
 }
 
+type barWriter struct {
+	bar   *pb.ProgressBar
+	inner io.Writer
+}
+
+func (w *barWriter) Write(p []byte) (n int, err error) {
+	n, err = w.inner.Write(p)
+	w.bar.Add(n)
+	return n, err
+}
+
 // GetFileHash returns sha256 hash of a file
-func GetFileHash(path string) (string, error) {
+func GetFileHash(path string, bar *pb.ProgressBar) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -26,7 +39,13 @@ func GetFileHash(path string) (string, error) {
 
 	defer f.Close()
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+
+	bw := &barWriter{
+		bar:   bar,
+		inner: h,
+	}
+
+	if _, err := io.Copy(bw, f); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
@@ -34,26 +53,35 @@ func GetFileHash(path string) (string, error) {
 
 // GetFiles finds and returns all the files in the given path
 // It will also returns any file in sub-directories if "full=true"
-func GetFiles(root string, minSize int64) ([]FileInfo, error) {
+func GetFiles(root string, minSize int64) ([]FileInfo, int64, error) {
 	var filesInfos []FileInfo
 	cleanedPath := CleanPath(root)
+	totalSize := int64(0)
+
 	err := filepath.Walk(cleanedPath, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			size := info.Size()
-			// Ignore files less than minimum size
-			if size > minSize {
-				filesInfos = append(filesInfos, FileInfo{
-					Path: path,
-					Size: size,
-				})
-			}
+		if info.IsDir() {
+			return nil
 		}
+
+		// Ignore files less than minimum size
+		size := info.Size()
+		if size < minSize {
+			return nil
+		}
+
+		filesInfos = append(filesInfos, FileInfo{
+			Path: path,
+			Size: size,
+		})
+		totalSize += size
+
 		return nil
 	})
 	if err != nil {
-		return filesInfos, err
+		return nil, 0, err
 	}
-	return filesInfos, nil
+
+	return filesInfos, totalSize, nil
 }
 
 // GroupFiles groups files based on their file size
@@ -79,16 +107,9 @@ func GroupFiles(files []FileInfo) (map[int64][]FileInfo, int64) {
 // minSize is the minimum file size to scan
 // "flat=true" will tell the function not to print out any data other than the path to duplicate files
 // algorithm is the algorithm to calculate the hash with
-func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount int64) map[string][]FileInfo {
+func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount, totalSize int64) map[string][]FileInfo {
 	hashes := map[string][]FileInfo{}
 	var lock = sync.Mutex{}
-
-	totalSize := int64(0)
-	for _, group := range fileGroups {
-		for _, file := range group {
-			totalSize += file.Size
-		}
-	}
 
 	bar := createBar(totalSize)
 	defer bar.Finish()
@@ -97,14 +118,11 @@ func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount
 		// All groups will have more than one file
 		for _, group := range fileGroups {
 			for _, file := range group {
-				hash, err := GetFileHash(file.Path)
+				hash, err := GetFileHash(file.Path, bar)
 				if err != nil {
 					log.Printf("Encountered error hashing file %q: %s", file.Path, err)
 				} else {
 					hashes[hash] = append(hashes[hash], file)
-				}
-				if bar != nil {
-					bar.Add64(file.Size)
 				}
 			}
 		}
@@ -120,16 +138,13 @@ func CollectHashes(fileGroups map[int64][]FileInfo, singleThread bool, fileCount
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			for file := range workChan {
-				hash, err := GetFileHash(file.Path)
+				hash, err := GetFileHash(file.Path, bar)
 				if err != nil {
 					log.Printf("Encountered error hashing file %q: %s", file.Path, err)
 				} else {
 					lock.Lock()
 					hashes[hash] = append(hashes[hash], file)
 					lock.Unlock()
-				}
-				if bar != nil {
-					bar.Add64(file.Size)
 				}
 			}
 
