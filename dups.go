@@ -119,7 +119,7 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 	fullHashes := map[string][]FileInfo{}
 	var lock = sync.Mutex{}
 
-	bar := createBar(quickHash*fileCount, false)
+	bar := createBar(quickHash*fileCount, BAR_INITIAL)
 
 	numWorkers := runtime.GOMAXPROCS(0)
 	wg := &sync.WaitGroup{}
@@ -186,7 +186,7 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 		totalSize += file.Size
 	}
 
-	fullBar := createBar(totalSize, true)
+	fullBar := createBar(totalSize, BAR_FULLHASH)
 
 	wg.Add(numWorkers)
 	workChan = make(chan FileInfo, numWorkers)
@@ -248,21 +248,29 @@ func GetDuplicates(hashes map[string][]FileInfo) ([][]FileInfo, int64, int64) {
 // It will keep the first file in a duplicate set and removes any other files in the set
 // It will return the sum of deleted file sizes and total number of deleted files
 func RemoveDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
+	total := int64(0)
+	for _, group := range fileSets {
+		total += int64(len(group))
+	}
+
+	bar := createBar(total, BAR_LINKING)
+	defer bar.Finish()
+
 	totalSize := int64(0)
 	totalDeleted := int64(0)
 	for _, files := range fileSets {
-		for i, file := range files {
-			if i > 0 {
-				totalSize += file.Size
-				totalDeleted++
-				err := os.Remove(file.Path)
-				if err != nil {
-					return totalSize, totalDeleted, err
-				}
-
+		for _, file := range files[1:] {
+			totalSize += file.Size
+			totalDeleted++
+			err := os.Remove(file.Path)
+			if err != nil {
+				return totalSize, totalDeleted, err
 			}
+
+			bar.Increment()
 		}
 	}
+
 	return totalSize, totalDeleted, nil
 }
 
@@ -270,6 +278,14 @@ func RemoveDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
 // It will keep the first file in a duplicate set and make hard links from any other files in the set to that file.
 // It will return the sum of linked file sizes and total number of linked files.
 func LinkDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
+	total := int64(0)
+	for _, group := range fileSets {
+		total += int64(len(group))
+	}
+
+	bar := createBar(total, BAR_LINKING)
+	defer bar.Finish()
+
 	totalSize := int64(0)
 	totalLinked := int64(0)
 	for _, files := range fileSets {
@@ -287,7 +303,10 @@ func LinkDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
 			if err != nil {
 				return totalSize, totalLinked, err
 			}
+
+			bar.Increment()
 		}
 	}
+
 	return totalSize, totalLinked, nil
 }
