@@ -250,7 +250,7 @@ func GetDuplicates(hashes map[string][]FileInfo) ([][]FileInfo, int64, int64) {
 func RemoveDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
 	total := int64(0)
 	for _, group := range fileSets {
-		total += int64(len(group))
+		total += int64(len(group) - 1)
 	}
 
 	bar := createBar(total, BAR_LINKING)
@@ -280,7 +280,7 @@ func RemoveDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
 func LinkDuplicates(fileSets [][]FileInfo) (int64, int64, error) {
 	total := int64(0)
 	for _, group := range fileSets {
-		total += int64(len(group))
+		total += int64(len(group) - 1)
 	}
 
 	bar := createBar(total, BAR_LINKING)
