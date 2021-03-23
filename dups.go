@@ -119,7 +119,18 @@ func CollectHashes(fileGroups map[int64][]FileInfo, fileCount int64) map[string]
 	fullHashes := map[string][]FileInfo{}
 	var lock = sync.Mutex{}
 
-	bar := createBar(quickHash*fileCount, BAR_INITIAL)
+	quickHashBarSize := int64(0)
+	for _, group := range fileGroups {
+		for _, file := range group {
+			if file.Size < quickHash {
+				quickHashBarSize += file.Size
+			} else {
+				quickHashBarSize += quickHash
+			}
+		}
+	}
+
+	bar := createBar(quickHashBarSize, BAR_INITIAL)
 
 	numWorkers := runtime.GOMAXPROCS(0)
 	wg := &sync.WaitGroup{}
