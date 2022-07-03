@@ -2,7 +2,6 @@ package main
 
 import (
 	"dups"
-	"fmt"
 	"log"
 	"os"
 
@@ -48,13 +47,14 @@ func commonSetup(args []string, minSize int64) ([][]dups.FileInfo, int64, int64)
 	duplicates, totalFiles, totalDuplicates := dups.GetDuplicates(hashes)
 	log.Printf("found %d files with total of %d duplicates\n", totalFiles, totalDuplicates)
 
-	for _, fs := range duplicates {
-		log.Printf("Path: %s \nSize: %d\n", fs[0].Path, fs[0].Size)
-		for _, file := range fs[1:] {
-			fmt.Println(file.Path)
+	// uncomment if you want a listing of all files that have duplicates
+	/*
+		for _, fs := range duplicates {
+			for _, file := range fs {
+				fmt.Println(file.Path)
+			}
 		}
-		log.Println("============================================================================")
-	}
+	*/
 
 	return duplicates, totalFiles, totalDuplicates
 }
